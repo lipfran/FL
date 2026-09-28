@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="it">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Allenamenti FL</title>
+  <style>
+    :root {
+      --bg: #121212;
+      --card-bg: #1e1e1e;
+      --accent: #ff3b30;
+      --text: #ffffff;
+      --text-muted: #a0a0a0;
+      --border: #2a2a2a;
+      --input-bg: #2a2a2a;
+    }
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+      background-color: var(--bg);
+      color: var(--text);
+      margin: 0;
+      padding: 16px;
+      max-width: 600px;
+      margin-left: auto;
+      margin-right: auto;
+    }
+    .header { margin-bottom: 20px; }
+    .today { color: var(--text-muted); font-size: 14px; text-transform: capitalize; }
+    .tabs { display: flex; gap: 8px; margin-bottom: 12px; }
+    .tab {
+      flex: 1; padding: 10px; background: var(--card-bg); border: 1px solid var(--border);
+      color: var(--text); font-weight: bold; border-radius: 8px; cursor: pointer;
+    }
+    .tab.active { background: var(--accent); border-color: var(--accent); }
+    .scheda-title-input {
+      width: 100%; background: transparent; border: none; color: var(--text);
+      font-size: 20px; font-weight: bold; margin-bottom: 16px; outline: none; box-sizing: border-box;
+    }
+    .exercise { background: var(--card-bg); border: 1px solid var(--border); border-radius: 12px; margin-bottom: 12px; overflow: hidden; }
+    .exercise-head { padding: 16px; display: flex; align-items: center; justify-content: space-between; cursor: pointer; }
+    .exercise-name { font-weight: bold; font-size: 16px; flex: 1; }
+    .exercise-stat { margin-right: 12px; }
+    .exercise-stat.empty { color: var(--text-muted); font-size: 12px; }
+    .chevron { width: 16px; height: 16px; transition: transform 0.2s; }
+    .exercise.open .chevron { transform: rotate(180deg); }
+    .exercise-body { display: none; padding: 0 16px 16px 16px; border-top: 1px solid var(--border); }
+    .exercise.open .exercise-body { display: block; }
+    .sets-list { margin-top: 12px; }
+    .set-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid var(--border); }
+    .set-date { color: var(--text-muted); font-size: 12px; }
+    .set-data .unit { font-size: 11px; color: var(--text-muted); }
+    .del-set { background: none; border: none; color: #ff453a; cursor: pointer; font-size: 14px; }
+    .entry-panel { margin-top: 16px; background: #252525; padding: 12px; border-radius: 8px; }
+    .entry-label { font-size: 12px; color: var(--text-muted); margin-bottom: 8px; }
+    .stepper-row { display: flex; gap: 8px; margin-bottom: 12px; }
+    .stepper { flex: 1; display: flex; align-items: center; background: var(--input-bg); border-radius: 6px; padding: 4px; }
+    .stepper button { background: #3a3a3c; border: none; color: white; width: 32px; height: 32px; border-radius: 4px; font-weight: bold; cursor: pointer; }
+    .stepper input { flex: 1; background: transparent; border: none; color: white; text-align: center; font-size: 16px; outline: none; width: 100%; }
+    .unit-label { font-size: 12px; color: var(--text-muted); margin-right: 6px; }
+    .confirm-set-btn { width: 100%; padding: 10px; background: var(--accent); border: none; color: white; font-weight: bold; border-radius: 6px; cursor: pointer; }
+    .notes-wrap { margin-top: 16px; }
+    .notes-textarea { width: 100%; background: var(--input-bg); border: 1px solid var(--border); color: white; border-radius: 6px; padding: 8px; box-sizing: border-border-box; outline: none; }
+    .exercise-footer { margin-top: 16px; display: flex; justify-content: flex-end; gap: 8px; }
+    .del-exercise { background: none; border: none; color: #ff453a; font-size: 12px; cursor: pointer; }
+    .del-exercise-cancel { background: none; border: none; color: var(--text-muted); font-size: 12px; cursor: pointer; }
+    .add-exercise { width: 100%; padding: 12px; background: transparent; border: 1px dashed var(--border); color: var(--text-muted); border-radius: 8px; cursor: pointer; margin-top: 12px; }
+    .new-exercise-row { display: flex; gap: 8px; margin-top: 12px; }
+    .new-exercise-row input { flex: 1; background: var(--input-bg); border: 1px solid var(--border); border-radius: 6px; color: white; padding: 8px; outline: none; }
+    .new-exercise-row button { background: var(--accent); border: none; color: white; padding: 8px 16px; border-radius: 6px; cursor: pointer; }
+    .num { font-family: monospace; font-size: 15px; }
+    .no-sets { color: var(--text-muted); font-size: 13px; font-style: italic; padding: 8px 0; }
+  </style>
+</head>
+<body>
+
+  <div class="header">
+    <div id="today" class="today"></div>
+  </div>
+
+  <div class="tabs" id="tabs"></div>
+
+  <input type="text" id="schedaNameInput" class="scheda-title-input" />
+
+  <div id="exerciseList"></div>
+  <div id="addExerciseArea"></div>
+
+<script>
+const STORAGE_KEY = 'schede-workout-v1';
+const KG_STEP = 2.5;
+const REPS_STEP = 1;
+
+let state = {
+  activeScheda: 'A',
+  schede: {
+    A: { name: 'Scheda A', exercises: [
+      { id: uid(), name: 'Floor Press', sets: [], notes: '' },
+      { id: uid(), name: 'Croci a terra', sets: [], notes: '' },
+      { id: uid(), name: 'Lento avanti', sets: [], notes: '' },
+      { id: uid(), name: 'Alzate laterali', sets: [], notes: '' },
+      { id: uid(), name: 'French Press', sets: [], notes: '' },
+      { id: uid(), name: 'Crunch', sets: [], notes: '' },
+      { id: uid(), name: 'Goblet squat', sets: [], notes: '' }
+    ] },
+    B: { name: 'Scheda B', exercises: [
+      { id: uid(), name: 'Rematore 1 braccio', sets: [], notes: '' },
+      { id: uid(), name: 'Rematore Busto Flesso', sets: [], notes: '' },
+      { id: uid(), name: 'Curl alternato', sets: [], notes: '' },
+      { id: uid(), name: 'Curl a Martello', sets: [], notes: '' },
+      { id: uid(), name: 'Planck', sets: [], notes: '' },
+      { id: uid(), name: 'Crunch', sets: [], notes: '' },
+      { id: uid(), name: 'Stacchi a gambe tese', sets: [], notes: '' }
+    ] }
+  }
+};
+
+let openExerciseId = null;
+let addingExercise = false;
+let confirmingDeleteId = null;
+let pendingEntry = {};
+
+function uid(){
+  return Date.now().toString(36) + Math.random().toString(36).slice(2, 7);
+}
+
+function todayLabel(){
+  const d = new Date();
+  const s = d.toLocaleDateString('it-IT', { weekday:'long', day:'2-digit', month:'long' });
+  return s.charAt(0).toUpperCase() + s.slice(1);
+}
+
+function fullDate(){ return new Date().toISOString(); }
+
+function formatKg(n){
+  if (n === null || n === undefined || isNaN(n)) return '';
+  return (Math.round(n * 100) / 100).toString().replace('.', ',');
+}
+
+function loadState(){
+  try{
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if(raw){
+      const parsed = JSON.parse(raw);
+      if(parsed && parsed.schede) state = parsed;
+    }
+  }catch(e){
+    console.error("Errore caricamento stato", e);
+  }
+  render();
+}
+
+function saveState(){
+  try{
+    localStorage.setItem(STORAGE_KEY, JSON.stringify(state));
+  }catch(e){
+    console.error('Errore nel salvataggio', e);
+  }
+}
+
+function getPending(exId){
+  if(!pendingEntry[exId]){
+    const ex = findExercise(exId);
+    const last = ex && ex.sets.length ? ex.sets[ex.sets.length - 1] : null;
+    pendingEntry[exId] = {
+      kg: last ? last.kg : null,
+      reps: last ? last.reps : 8
+    };
+  }
+  return pendingEntry[exId];
+}
+
+function findExercise(exId){
+  return state.schede[state.activeScheda].exercises.find(e => e.id === exId);
+}
+
+function render(){
+  document.getElementById('today').textContent = todayLabel();
+
+  const tabsEl = document.getElementById('tabs');
+  tabsEl.innerHTML = '';
+  Object.keys(state.schede).forEach(key => {
+    const scheda = state.schede[key];
+    const btn = document.createElement('button');
+    btn.className = 'tab' + (state.activeScheda === key ? ' active' : '');
+    btn.textContent = scheda.name || '—';
+    btn.onclick = () => {
+      state.activeScheda = key;
+      openExerciseId = null;
+      confirmingDeleteId = null;
+      render();
+    };
+    tabsEl.appendChild(btn);
+  });
+
+  const nameInput = document.getElementById('schedaNameInput');
+  nameInput.value = state.schede[state.activeScheda].name;
+  nameInput.oninput = (e) => {
+    state.schede[state.activeScheda].name = e.target.value;
+    const idx = Object.keys(state.schede).indexOf(state.activeScheda);
+    document.querySelectorAll('.tab')[idx].textContent = e.target.value || '—';
+  };
+  nameInput.onblur = saveState;
+
+  renderExercises();
+}
+
+function renderExercises(){
+  const list = document.getElementById('exerciseList');
+  list.innerHTML = '';
+  const exercises = state.schede[state.activeScheda].exercises;
+
+  if(exercises.length === 0){
+    const empty = document.createElement('div');
+    empty.className = 'empty-state';
+    empty.textContent = 'Questa scheda è vuota. Aggiungi il primo esercizio qui sotto per iniziare a registrare i tuoi allenamenti.';
+    list.appendChild(empty);
+  }
+
+  exercises.forEach(ex => {
+    list.appendChild(buildExerciseCard(ex));
+  });
+
+  renderAddExerciseArea();
+}
+
+function buildExerciseCard(ex){
+  const isOpen = openExerciseId === ex.id;
+  const card = document.createElement('div');
+  card.className = 'exercise' + (isOpen ? ' open' : '');
+
+  const head = document.createElement('div');
+  head.className = 'exercise-head';
+
+  const nameEl = document.createElement('div');
+  nameEl.className = 'exercise-name';
+  nameEl.textContent = ex.name;
+
+  const statEl = document.createElement('div');
+  if(ex.sets.length > 0){
+    const last = ex.sets[ex.sets.length - 1];
+    statEl.className = 'exercise-stat num';
+    statEl.innerHTML = `${formatKg(last.kg)}<span style="font-size:11px;color:var(--text-muted);font-family:'Inter',sans-serif;"> kg</span> × ${last.reps}`;
+  } else {
+    statEl.className = 'exercise-stat empty';
+    statEl.textContent = 'nuovo';
+  }
+
+  const chevron = document.createElementNS('http://www.w3.org/2000/svg', 'svg');
+  chevron.setAttribute('class','chevron');
+  chevron.setAttribute('viewBox','0 0 24 24');
+  chevron.innerHTML = '<path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" fill="none" stroke-linecap="round" stroke-linejoin="round"/>';
+
+  head.appendChild(nameEl);
+  head.appendChild(statEl);
+  head.appendChild(chevron);
+  head.onclick = () => {
+    openExerciseId = isOpen ? null : ex.id;
+    confirmingDeleteId = null;
+    renderExercises();
+  };
+
+  const body = document.createElement('div');
+  body.className = 'exercise-body';
+  const bodyInner = document.createElement('div');
+
+  const setsList = document.createElement('div');
+  setsList.className = 'sets-list';
+
+  if(ex.sets.length === 0){
+    const none = document.createElement('div');
+    none.className = 'no-sets';
+    none.textContent = 'Nessuna serie registrata finora.';
+    setsList.appendChild(none);
+  } else {
+    ex.sets.slice().reverse().slice(0, 8).forEach(set => {
+      const row = document.createElement('div');
+      row.className = 'set-row';
+
+      const dateEl = document.createElement('div');
+      dateEl.className = 'set-date';
+      const d = new Date(set.date);
+      dateEl.textContent = d.toLocaleDateString('it-IT', { day:'2-digit', month:'2-digit' });
+
+      const dataEl = document.createElement('div');
+      dataEl.className = 'set-data num';
+      dataEl.innerHTML = `${formatKg(set.kg)} <span class="unit">kg</span> × ${set.reps} <span class="unit">rip</span>`;
+
+      const delBtn = document.createElement('button');
+      delBtn.className = 'del-set';
+      delBtn.textContent = '✕';
+      delBtn.onclick = () => {
+        ex.sets = ex.sets.filter(s => s.id !== set.id);
+        saveState();
+        renderExercises();
+      };
+
+      row.appendChild(dateEl);
+      row.appendChild(dataEl);
+      row.appendChild(delBtn);
+      setsList.appendChild(row);
+    });
+  }
+
+  const entryPanel = document.createElement('div');
+  entryPanel.className = 'entry-panel';
+
+  const entryLabel = document.createElement('div');
+  entryLabel.className = 'entry-label';
+  entryLabel.textContent = 'Registra una nuova serie';
+  entryPanel.appendChild(entryLabel);
+
+  const pending = getPending(ex.id);
+
+  const stepperRow = document.createElement('div');
+  stepperRow.className = 'stepper-row';
+
+  stepperRow.appendChild(buildKgInput(pending, ex.id));
+  stepperRow.appendChild(buildStepper({
+    value: pending.reps,
+    step: REPS_STEP,
+    min: 1,
+    unit: 'rip',
+    onChange: (v) => { pending.reps = v; }
+  }));
+
+  entryPanel.appendChild(stepperRow);
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.className = 'confirm-set-btn';
+  confirmBtn.textContent = 'Registra serie';
+  confirmBtn.onclick = () => {
+    const kg = pending.kg;
+    const reps = pending.reps;
+
+    const kgValid = (kg !== null && kg !== undefined && !isNaN(kg) && kg >= 0);
+    const repsValid = (reps !== null && reps !== undefined && !isNaN(reps) && reps > 0);
+
+    if(!kgValid || !repsValid){
+      const target = document.getElementById('kg-input-' + ex.id);
+      if(target) target.focus();
+      return;
+    }
+
+    ex.sets.push({ id: uid(), kg: kg, reps: reps, date: fullDate() });
+    pendingEntry[ex.id] = { kg: kg, reps: reps };
+
+    saveState();
+    renderExercises();
+  };
+  entryPanel.appendChild(confirmBtn);
+
+  const notesWrap = document.createElement('div');
+  notesWrap.className = 'notes-wrap';
+
+  const notesLabel = document.createElement('div');
+  notesLabel.className = 'entry-label';
+  notesLabel.textContent = 'Note';
+  notesWrap.appendChild(notesLabel);
+
+  const notesArea = document.createElement('textarea');
+  notesArea.className = 'notes-textarea';
+  notesArea.rows = 2;
+  notesArea.placeholder = 'Note libere su questo esercizio';
+  notesArea.value = ex.notes || '';
+  notesArea.oninput = (e) => { ex.notes = e.target.value; };
+  notesArea.onblur = saveState;
+  notesWrap.appendChild(notesArea);
+
+  const footer = document.createElement('div');
+  footer.className = 'exercise-footer';
+
+  if(confirmingDeleteId === ex.id){
+    const confirmText = document.createElement('button');
+    confirmText.className = 'del-exercise';
+    confirmText.textContent = 'Confermi rimozione?';
+    confirmText.onclick = () => {
+      state.schede[state.activeScheda].exercises = state.schede[state.activeScheda].exercises.filter(e => e.id !== ex.id);
+      confirmingDeleteId = null;
+      saveState();
+      renderExercises();
+    };
+    const cancelText = document.createElement('button');
+    cancelText.className = 'del-exercise-cancel';
+    cancelText.textContent = 'Annulla';
+    cancelText.onclick = () => {
+      confirmingDeleteId = null;
+      renderExercises();
+    };
+    footer.appendChild(cancelText);
+    footer.appendChild(confirmText);
+  } else {
+    const delExBtn = document.createElement('button');
+    delExBtn.className = 'del-exercise';
+    delExBtn.textContent = 'Rimuovi esercizio';
+    delExBtn.onclick = () => {
+      confirmingDeleteId = ex.id;
+      renderExercises();
+    };
+    footer.appendChild(delExBtn);
+  }
+
+  bodyInner.appendChild(setsList);
+  bodyInner.appendChild(entryPanel);
+  bodyInner.appendChild(notesWrap);
+  bodyInner.appendChild(footer);
+  body.appendChild(bodyInner);
+
+  card.appendChild(head);
+  card.appendChild(body);
+  return card;
+}
+
+function buildKgInput(pending, exId){
+  const wrap = document.createElement('div');
+  wrap.className = 'stepper';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.inputMode = 'decimal';
+  input.placeholder = '— kg';
+  input.id = 'kg-input-' + exId;
+  input.value = (pending.kg === null || pending.kg === undefined) ? '' : formatKg(pending.kg);
+
+  function commit(){
+    const raw = input.value.trim().replace(',', '.');
+    if(raw === ''){ pending.kg = null; return; }
+    let n = parseFloat(raw);
+    if(isNaN(n)){ pending.kg = null; return; }
+    if(n < 0) n = 0;
+    pending.kg = n;
+  }
+
+  input.oninput = commit;
+  input.onblur = commit;
+
+  const unitLabel = document.createElement('div');
+  unitLabel.className = 'unit-label';
+  unitLabel.textContent = 'kg';
+
+  wrap.appendChild(input);
+  wrap.appendChild(unitLabel);
+  return wrap;
+}
+
+function buildStepper({ value, step, min, unit, onChange }){
+  const wrap = document.createElement('div');
+  wrap.className = 'stepper';
+
+  const minusBtn = document.createElement('button');
+  minusBtn.textContent = '–';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.inputMode = 'decimal';
+  input.value = formatKg(value);
+
+  const plusBtn = document.createElement('button');
+  plusBtn.textContent = '+';
+
+  const unitLabel = document.createElement('div');
+  unitLabel.className = 'unit-label';
+  unitLabel.textContent = unit;
+
+  function commit(v){
+    let n = Math.max(min, v);
+    n = Math.round(n / step) * step;
+    input.value = formatKg(n);
+    onChange(n);
+  }
+
+  minusBtn.onclick = () => commit((parseFloat(input.value.replace(',', '.')) || 0) - step);
+  plusBtn.onclick = () => commit((parseFloat(input.value.replace(',', '.')) || 0) + step);
+  input.onchange = () => commit(parseFloat(input.value.replace(',', '.')) || min);
+  input.onblur = () => commit(parseFloat(input.value.replace(',', '.')) || min);
+
+  wrap.appendChild(minusBtn);
+  wrap.appendChild(input);
+  wrap.appendChild(unitLabel);
+  wrap.appendChild(plusBtn);
+  return wrap;
+}
+
+function renderAddExerciseArea(){
+  const area = document.getElementById('addExerciseArea');
+  area.innerHTML = '';
+
+  if(!addingExercise){
+    const btn = document.createElement('button');
+    btn.className = 'add-exercise';
+    btn.textContent = '+ Aggiungi esercizio';
+    btn.onclick = () => {
+      addingExercise = true;
+      renderAddExerciseArea();
+    };
+    area.appendChild(btn);
+    return;
+  }
+
+  const row = document.createElement('div');
+  row.className = 'new-exercise-row';
+
+  const input = document.createElement('input');
+  input.type = 'text';
+  input.placeholder = 'Nome esercizio';
+
+  const confirmAdd = () => {
+    const name = input.value.trim();
+    if(!name){ input.focus(); return; }
+    const newEx = { id: uid(), name, sets: [], notes: '' };
+    state.schede[state.activeScheda].exercises.push(newEx);
+    openExerciseId = newEx.id;
+    addingExercise = false;
+    saveState();
+    render();
+  };
+
+  input.onkeydown = (e) => { if(e.key === 'Enter') confirmAdd(); };
+
+  const confirmBtn = document.createElement('button');
+  confirmBtn.textContent = 'Aggiungi';
+  confirmBtn.onclick = confirmAdd;
+
+  row.appendChild(input);
+  row.appendChild(confirmBtn);
+  area.appendChild(row);
+  input.focus();
+}
+
+loadState();
+</script>
+</body>
+</html>
